@@ -94,7 +94,7 @@ void setup(void){
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
   attachInterrupt (0, emergency_stop, RISING);
-  // mesured 0.49910 ~ 0.49920
+  // measured 0.49910 ~ 0.49920
   initialize_timer(62500-90); // 62500=16000000/256  90~=106.25=(2*0.49915-1)*(16000000/256)
   Serial.begin(9600);
   get_user_input();
