@@ -16,14 +16,14 @@
 
 #define CYCLES_PER_SECOND 16000000
 
-// MESURED DIFFERENCE: 0.49910 Hz ~ 0.49920 Hz
+// MEASURED DIFFERENCE: 0.49910 Hz ~ 0.49920 Hz
 // 0.49910 * 
 // (16000000*256)/ 62500
 // 0.4
 
 OneWire ds(PIN_THERMOMETER);
 
-int16_t mesure_temperature(void);
+int16_t measure_temperature(void);
 void motor_ccw(unsigned);
 void emergency_stop(void) __attribute__((noreturn));
 void timer_interrupt(uint16_t);
@@ -108,7 +108,7 @@ void loop(void){
   }else{
     // TODO correction software here
     Serial.println("test");
-    int16_t temp = mesure_temperature();
+    int16_t temp = measure_temperature();
     Serial.println(float(temp)/16.0);
     delay(1000);
     //asm volatile("nop"); // stop optimizing my buzy-waiting loops away! >.<
@@ -180,7 +180,7 @@ void emergency_stop(void){
 
 
  // TODO: input from serial
-  //int16_t raw = mesure_temperature();
+  //int16_t raw = measure_temperature();
   //Serial.print("Temperature: ");
   //Serial.print(raw);
   //Serial.print(" (");
@@ -200,7 +200,7 @@ void motor_ccw(unsigned ms){
   delay(ms); 
 }
 
-int16_t mesure_temperature(void) {
+int16_t measure_temperature(void) {
   byte i;
   byte type_s;
   byte data[12];
