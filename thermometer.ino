@@ -1,5 +1,5 @@
 #include <OneWire.h>
-#define DEBUG if(1)
+#define DEBUG if(0)
 
 #define PIN_THERMOMETER   7
 #define PIN_MOTOR_BLUE   12
@@ -24,7 +24,8 @@
 OneWire ds(PIN_THERMOMETER);
 
 int16_t measure_temperature(void);
-void motor_ccw(unsigned);
+void motor_cw(int);
+void motor_ccw(int);
 void emergency_stop(void) __attribute__((noreturn));
 void timer_interrupt(uint16_t);
 void initialize_timer(void);
@@ -34,6 +35,8 @@ int8_t   volatile table_index   = 0;
 uint8_t           table_size    = 0;
 int16_t           table_temp[64]={0}; 
 uint32_t          table_time[64]={0}; // seconds to wait before next interrupt
+
+bool burner_state;
 
 void get_user_input(void){
     char c;
@@ -97,6 +100,7 @@ void setup(void){
   // measured 0.49910 ~ 0.49920
   initialize_timer(62500-90); // 62500=16000000/256  90~=106.25=(2*0.49915-1)*(16000000/256)
   Serial.begin(9600);
+  burner_state = false;
   get_user_input();
 }
 
@@ -104,13 +108,26 @@ void loop(void){
   if(table_size<0){
     Serial.write("done!");
     Serial.flush();
+    motor_ccw(180);
     asm volatile("jmp 0"); // soft-reset
   }else{
     // TODO correction software here
     Serial.println("test");
+   
     int16_t temp = measure_temperature();
     Serial.println(float(temp)/16.0);
+    float delta_temp;
+    delta_temp = float(temp)/16.0 - table_temp[table_index];
+    if(delta_temp < 0.0 && burner_state == false){
+      motor_cw(180);
+      burner_state = true;
+    }
+    if(delta_temp > 0.0 && burner_state == true){
+      motor_ccw(180);
+      burner_state = false;
+    }
     delay(1000);
+    
     //asm volatile("nop"); // stop optimizing my buzy-waiting loops away! >.<
   }
 }
@@ -139,21 +156,23 @@ ISR(TIMER1_COMPA_vect){
   digitalWrite(PIN_LED, !digitalRead(PIN_LED));
   
   // correct for drift
-  /*if(timer_seconds==table_time[table_index]){
+  if(timer_seconds==table_time[table_index]){
     table_index++;
     timer_seconds=0;
     if(table_index>=table_size){
       table_size = -1;
     }
-  }else{*/
+  }else{
     timer_seconds++;
-  //}
+  }
+  /*
   DEBUG Serial.print(timer_seconds/3600);
   DEBUG Serial.print(":");
   DEBUG Serial.print((timer_seconds/60)%60);
   DEBUG Serial.print(":");
   DEBUG Serial.println(timer_seconds%60);
   DEBUG Serial.flush();
+  */
 }
 
 // when everything goes wrong, turn down the gas and soft-reset.
@@ -162,17 +181,9 @@ void emergency_stop(void){
    int i;
    volatile uint16_t j; // volatile: don't optimize my wait loop away!
    for(i=0; i<128; i++){ // turn 360*
-     digitalWrite(PIN_MOTOR_BLUE,   HIGH);
-     digitalWrite(PIN_MOTOR_PINK,   LOW);
-     digitalWrite(PIN_MOTOR_YELLOW, LOW);
-     digitalWrite(PIN_MOTOR_ORANGE, HIGH);
-     for(j=10000;--j!=0;); //delay does not work in interrupts
-     digitalWrite(PIN_MOTOR_BLUE,   LOW);
-     digitalWrite(PIN_MOTOR_PINK,   HIGH);
-     digitalWrite(PIN_MOTOR_YELLOW, HIGH);
-     digitalWrite(PIN_MOTOR_ORANGE, LOW);
-     for(j=10000;--j!=0;); //delay does not work in interrupts
+     motor_ccw(1);
    }
+   burner_state = false;
    Serial.println("\nperformed emergency stop\n");
    Serial.flush();
    asm volatile("jmp 0"); // soft-reset
@@ -186,18 +197,41 @@ void emergency_stop(void){
   //Serial.print(" (");
   //Serial.print((float)raw / 16.0);
   //Serial.println("*C)");
+  
+void motor_cw(int steps){
+  volatile uint16_t j; // volatile: don't optimize my wait loop away!
+  if(steps < 0.0) steps *= -1;
+  int i;
+  for(i = 0; i < steps; i++){
+    digitalWrite(PIN_MOTOR_BLUE,   HIGH);
+    digitalWrite(PIN_MOTOR_PINK,   HIGH);
+    digitalWrite(PIN_MOTOR_YELLOW, LOW);
+    digitalWrite(PIN_MOTOR_ORANGE, LOW);
+    for(j=100000;--j!=0;); //delay does not work in interrupts
+    digitalWrite(PIN_MOTOR_BLUE,   LOW);
+    digitalWrite(PIN_MOTOR_PINK,   LOW);
+    digitalWrite(PIN_MOTOR_YELLOW, HIGH);
+    digitalWrite(PIN_MOTOR_ORANGE, HIGH);
+    for(j=100000;--j!=0;); //delay does not work in interrupts
+  }
+}
 
-void motor_ccw(unsigned ms){
-  digitalWrite(PIN_MOTOR_BLUE,   HIGH);
-  digitalWrite(PIN_MOTOR_PINK,   LOW);
-  digitalWrite(PIN_MOTOR_YELLOW, LOW);
-  digitalWrite(PIN_MOTOR_ORANGE, HIGH);
-  delay(ms);
-  digitalWrite(PIN_MOTOR_BLUE,   LOW);
-  digitalWrite(PIN_MOTOR_PINK,   HIGH);
-  digitalWrite(PIN_MOTOR_YELLOW, HIGH);
-  digitalWrite(PIN_MOTOR_ORANGE, LOW);
-  delay(ms); 
+void motor_ccw(int steps){
+  volatile uint16_t j; // volatile: don't optimize my wait loop away!
+  if(steps < 0.0) steps *= -1;
+  int i;
+  for(i = 0; i < steps; i++){
+    digitalWrite(PIN_MOTOR_BLUE,   HIGH);
+    digitalWrite(PIN_MOTOR_PINK,   LOW);
+    digitalWrite(PIN_MOTOR_YELLOW, LOW);
+    digitalWrite(PIN_MOTOR_ORANGE, HIGH);
+    for(j=100000;--j!=0;); //delay does not work in interrupts
+    digitalWrite(PIN_MOTOR_BLUE,   LOW);
+    digitalWrite(PIN_MOTOR_PINK,   HIGH);
+    digitalWrite(PIN_MOTOR_YELLOW, HIGH);
+    digitalWrite(PIN_MOTOR_ORANGE, LOW);
+    for(j=100000;--j!=0;); //delay does not work in interrupts
+  }
 }
 
 int16_t measure_temperature(void) {
