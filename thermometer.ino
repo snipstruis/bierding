@@ -32,11 +32,12 @@ void initialize_timer(void);
 
 uint32_t volatile timer_seconds = 0;
 int8_t   volatile table_index   = 0;
-uint8_t           table_size    = 0;
+int8_t            table_size    = 0;
 int16_t           table_temp[64]={0}; 
 uint32_t          table_time[64]={0}; // seconds to wait before next interrupt
 
 bool burner_state;
+bool timer_active;
 
 void get_user_input(void){
     char c;
@@ -49,10 +50,10 @@ input_loop:
   Serial.print(" (celcius): ");
   
   while(Serial.available()==0);
-  table_temp[table_size] = int16_t(Serial.parseFloat()*16);
+  table_temp[table_size] = int16_t(Serial.parseFloat());
   while(Serial.read()!=-1);
   
-  Serial.println(float(table_temp[table_size])/16.0);
+  Serial.println(float(table_temp[table_size]));
     
   Serial.print("Time        #");
   Serial.print(table_size);
@@ -81,12 +82,13 @@ input_continue:
   Serial.println("received input:");
   int i;
   for(i=0; i<table_size; i++){
-    Serial.print(float(table_temp[i])/16);
+    Serial.print(float(table_temp[i]));
     Serial.print("\t");
     Serial.println(table_time[i]);
   }
   Serial.println("input understood");
   Serial.flush();
+  timer_active = true;
 }
 
 void setup(void){
@@ -101,29 +103,31 @@ void setup(void){
   initialize_timer(62500-90); // 62500=16000000/256  90~=106.25=(2*0.49915-1)*(16000000/256)
   Serial.begin(9600);
   burner_state = false;
+  timer_active = false; // to make sure the time interupt doesn't interfere with the input
   get_user_input();
+  timer_seconds = 0;
 }
 
 void loop(void){
   if(table_size<0){
-    Serial.write("done!");
+    Serial.println("done!");
     Serial.flush();
-    motor_ccw(180);
+    if(burner_state == true) motor_ccw(45);
     asm volatile("jmp 0"); // soft-reset
   }else{
     // TODO correction software here
-    Serial.println("test");
+    Serial.println(table_size);
+    Serial.println(table_index);
    
     int16_t temp = measure_temperature();
     Serial.println(float(temp)/16.0);
-    float delta_temp;
-    delta_temp = float(temp)/16.0 - table_temp[table_index];
-    if(delta_temp < 0.0 && burner_state == false){
-      motor_cw(180);
+    if(float(temp)/16.0 < table_temp[table_index] && burner_state == false){
+      motor_cw(45);
       burner_state = true;
+      Serial.println(table_temp[table_index]);
     }
-    if(delta_temp > 0.0 && burner_state == true){
-      motor_ccw(180);
+    if(float(temp)/16.0 > table_temp[table_index] && burner_state == true){
+      motor_ccw(45);
       burner_state = false;
     }
     delay(1000);
@@ -155,15 +159,17 @@ void initialize_timer(uint16_t ticks){
 ISR(TIMER1_COMPA_vect){
   digitalWrite(PIN_LED, !digitalRead(PIN_LED));
   
-  // correct for drift
-  if(timer_seconds==table_time[table_index]){
-    table_index++;
-    timer_seconds=0;
-    if(table_index>=table_size){
-      table_size = -1;
+  if(timer_active){
+    // correct for drift
+    if(timer_seconds==table_time[table_index]){
+      table_index++;
+      timer_seconds=0;
+      if(table_index>=table_size){
+        table_size = -1;
+      }
+    }else{
+      timer_seconds++;
     }
-  }else{
-    timer_seconds++;
   }
   /*
   DEBUG Serial.print(timer_seconds/3600);
@@ -180,9 +186,9 @@ void emergency_stop(void){
    digitalWrite(PIN_LED, HIGH);
    int i;
    volatile uint16_t j; // volatile: don't optimize my wait loop away!
-   for(i=0; i<128; i++){ // turn 360*
-     motor_ccw(1);
-   }
+   
+   if(burner_state == true) motor_ccw(45);
+   
    burner_state = false;
    Serial.println("\nperformed emergency stop\n");
    Serial.flush();
